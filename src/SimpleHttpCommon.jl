@@ -66,7 +66,12 @@ export STATUS_CODES,
        write_chunk,
        read_http_headers,
        parse_http_headers,
-       CloseClientException
+       CloseClientException,
+       body,
+       bodys,
+       BytesReaderIterator,
+       BytesFileIterator,
+       LimitedBytesFileIterator
 
 typealias Headers OrderedDict{String,String}
 
@@ -208,6 +213,10 @@ type Iterable
     data::Any
 end
 
+Base.start(it::Iterable) = Base.start(it.data)
+Base.done(it::Iterable, state) = Base.done(it.data)
+Base.next(it::Iterable, state) = Base.next(it.data)
+
 typealias ResponseData Union(String, Array{Uint8}, Task, Iterable, Function)
 typealias NothingOrFunction Union(Nothing, Function)
 typealias NothingOrRequest Union(Nothing, Request)
@@ -242,35 +251,96 @@ show(io::IO, r::Response) = print(
     ")"
 )
 
-function readybytes(req::Request, cb::Function, size=0, buffer=1)
-    sock = req.sock
+function readybytes(req::Request, size::Integer)
+    data = Base.readbytes(req.sock, size)
+    req.ready_bytes += size
+end
+
+function readybytes(req::Request, cb::Function; size=0, buffer=1)
     total = 0
 
     if size > 0
         total = buffer
+
         if total > size
             total = size
         end
 
         while total <= size
-            req.ready_bytes += buffer
             total += buffer
-            cb(Base.readbytes(sock, buffer))
+            cb(readybytes(req, buffer))
         end
     else
         while true
-            req.ready_bytes += buffer
             total += buffer
-            cb(Base.readbytes(sock, buffer))
+            cb(readybytes(req, buffer))
         end
     end
     total
 end
 
-readybytes(req::Request, size=0, buffer=1) = Task(() -> readybytes(req::Request, produce, size, buffer))
+type BytesReaderIterator
+    ready::Function
+    size::Integer
+    buffer::Integer
+    ready_size::Integer
 
+    BytesReaderIterator(r::Function, s::Integer, b::Integer) = new(r, s, b > s ? s : b, 0)
+    BytesReaderIterator(io::IO, s::Integer, b::Integer) = begin
+        BytesReaderIterator(s, b) do size
+            Base.readbytes(io, size)
+        end
+    end
+end
 
-function readybytes(req::Request, size::Int)
+Base.start(reader::BytesReaderIterator) = reader.buffer
+Base.done(reader::BytesReaderIterator, state) = (state == 0)
+Base.next(reader::BytesReaderIterator, state) = begin
+    d = reader.ready(state)
+    reader.ready_size += state
+    new_state = (reader.ready_size + reader.buffer) > reader.size ? (reader.size - reader.ready_size) : reader.buffer
+    d, new_state
+end
+
+type BytesFileIterator
+    io::IO
+    buffer::Integer
+
+    BytesFileIterator(io::IO, buffer::Integer=1024) = new(io, buffer)
+end
+
+Base.start(it::BytesFileIterator) = it.buffer
+Base.done(it::BytesFileIterator, state) = eof(it.io)
+Base.next(it::BytesFileIterator, state) = begin
+    d = Base.readbytes(it.io, state)
+    d, state
+end
+
+type LimitedBytesFileIterator
+    io::IO
+    size::Integer
+    buffer::Integer
+    ready_size::Integer
+
+    LimitedBytesFileIterator(io::IO, size::Integer, buffer::Integer=1024) = new(io, size, buffer, 0)
+end
+
+Base.start(it::LimitedBytesFileIterator) = it.buffer
+Base.done(it::LimitedBytesFileIterator, state) = (state == 0)
+Base.next(it::LimitedBytesFileIterator, state) = begin
+    d = Base.readbytes(it.io, state)
+    it.ready_size += state
+    new_state = (it.ready_size + it.buffer) > it.size ? (it.size - it.ready_size) : it.buffer
+    d, new_state
+end
+
+readybytes_it(req::Request, size=0, buffer=1024) = begin
+    BytesReaderIterator(size, buffer) do size
+      readybytes(req, size)
+    end
+end
+
+function readybytes(req::Request, size::Integer)
     data = Base.readybytes(req.sock, size)
     req.ready_bytes += sizeof(data)
     data
@@ -288,12 +358,99 @@ function readline(req::Request)
     data
 end
 
-function eachline(req::Request)
-    data = Base.readline(req.sock)
-    req.ready_bytes += sizeof(data)
-    data
+readline_s(req::Request) = bytestring(readline(req))
+
+function body(req::Request)
+    cl = parseint(req.headers["Content-Length"])
+    readybytes(req, cl)
 end
 
+bodys(req::Request) =  bytestring(body(req))
+
+
+type UploadFile
+    tmp_path::String
+    io::IO
+    name::String
+    content_type::String
+    size::Int
+
+    UploadFile(t::String, i::IO, n::String, ct::String, s::Integer) = new (t, i, n, ct, s)
+    UploadFile(t::String, i::IO, n::String, ct::String) = UploadFile(t, i, n, ct, 0)
+end
+
+
+#function parse_multi_party(req::Request)
+#    ct = req.headers["Content-Type"]
+#    boundary = search(ct, "boundary=")
+#    if boundary.start > 0
+#        boundaryend = search(ct, ";", boundary.start)
+#        if boundaryend.end > -1
+#            boundary = ct[boundary.start+9:boundaryend]
+#        else
+#            boundary = ct[boundary.start+9:end]
+#        end
+#    else
+#        throw(HTTPParserHeaderException("Invalid Boundary"))
+#    end
+#
+#    invalid_line = () -> throw(HTTPParserHeaderException("Invalid Line"))
+#
+#    cl = parseint(req.headers["Content-Length"])
+#    rb = 0
+#
+#    d = Dict{String, Any}()
+#
+#    rboundary = () -> begin
+#      line = readline_s(req)
+#      rb += sizeof(line)
+#
+#      if line[1:end-2] != boundary
+#        invalid_line()
+#      end
+#    end
+#
+#    rboundary()
+#
+#    while rb < cl
+#      line = readline_s(req)
+#      content_disposition = line[22:end-2] # skip Content-Disposition and remove CRLF
+#      parts = content_disposition.split("; ")
+#      if parts[1] != "form-data"
+#        invalid_line()
+#      end
+#      ld = Dict{String,String}()
+#      l_name = ""
+#
+#      for p in parts[2:end]
+#        p_name, p_value = split(p, "=")
+#        p_value = p_value[2:end-2] # remove quotes
+#
+#        if p_name == "name"
+#          l_name = p_name
+#        else
+#          ld[p_name] = p_value
+#        end
+#      end
+#
+#      if haskey(ld, "filename")
+#        fct = readline_s(req)[1:end-2] # remove CRLF
+#        parts = fct.split(": ")
+#
+#        if parts[1] != "Content-Type"
+#          invalid_line()
+#        end
+#
+#        tmp_path, f_io = mktemp()
+#       ufile = UploadFile(tmp_path, f_io, ld["filename"], parts[2])
+#       d[p_value] = ufile
+#
+#
+#     else
+#
+#    end
+#   end
+#end
 
 function parse_qs(query::String)
     if !('=' in query)
