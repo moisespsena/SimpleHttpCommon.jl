@@ -62,7 +62,7 @@ export STATUS_CODES,
        Iterable,
        readuntil,
        readline,
-       readybytes,
+       readbytes,
        write_chunk,
        read_http_headers,
        parse_http_headers,
@@ -71,7 +71,10 @@ export STATUS_CODES,
        bodys,
        BytesReaderIterator,
        BytesFileIterator,
-       LimitedBytesFileIterator
+       LimitedBytesFileIterator,
+       FileResponse,
+       mh,
+       mh_push!
 
 typealias Headers OrderedDict{String,String}
 
@@ -112,7 +115,7 @@ type Request
     method::String
     resource::String
     protocol::NothingOrProtocol
-    headers::Headers
+    headers::Associative{String, String}
     data::RequestData
     sock
     env::Associative{String, Any}
@@ -126,11 +129,11 @@ type Request
     l::Associative{Any, Any}
     websocket
 
-    Request(m::String, r::String, pr::NothingOrProtocol, h::Headers, d::RequestData, s,
+    Request(m::String, r::String, pr::NothingOrProtocol, h::Associative{String, String}, d::RequestData, s,
             e::Associative{String, Any}, f::Bool, qr::String, q::Associative{String, Any},
             p::Associative{String, Any}, evs::Dict{String, Function}) = new(
         m, r, pr, h, d, s, e, f, qr, q, p, evs, 0, 0, Dict{Any,Any}(), nothing)
-    Request(m::String, r::String, pr::Protocol, h::Headers, d::RequestData, s,
+    Request(m::String, r::String, pr::Protocol, h::Associative{String, String}, d::RequestData, s,
             e::Associative{String, Any}, f::Bool, qr::String, q::Associative{String, Any},
             p::Associative{String, Any}) = Request(
         m, r, pr, h, d, s, e, f, qr, q, p, Dict{String, Function}())
@@ -224,14 +227,16 @@ typealias NothingOrRequest Union(Nothing, Request)
 type Response
     req::NothingOrRequest
     status::Int
-    headers::Headers
+    headers::Associative{String, String}
     data::ResponseData
     finished::Bool
+    mheaders::Associative{String, Array{String}}
 
-    Response(r::NothingOrRequest, s::Int, h::Headers, d::ResponseData, f::Bool) = new(r, s, h, d, f)
-    Response(s::Int, h::Headers, d::ResponseData, f::Bool) = Response(nothing, s, h, d, f)
-    Response(s::Int, h::Headers, d::ResponseData) = Response(s, h, d, false)
-    Response(s::Int, h::Headers) = Response(s, h, "")
+    Response(r::NothingOrRequest, s::Int, h::Associative{String, String}, d::ResponseData, f::Bool, mh::Associative{String, Array{String}}) = new(r, s, h, d, f, mh)
+    Response(r::NothingOrRequest, s::Int, h::Associative{String, String}, d::ResponseData, f::Bool) = new(r, s, h, d, f, Dict{String, Array{String}}())
+    Response(s::Int, h::Associative{String, String}, d::ResponseData, f::Bool) = Response(nothing, s, h, d, f)
+    Response(s::Int, h::Associative{String, String}, d::ResponseData) = Response(s, h, d, false)
+    Response(s::Int, h::Associative{String, String}) = Response(s, h, "")
     Response(s::Int, d::ResponseData) = Response(s, default_headers(), d)
     Response(s::Int) = Response(s, "")
     Response(d::ResponseData) = Response(200, d)
@@ -247,16 +252,31 @@ show(io::IO, r::Response) = print(
     ", ",
     length(r.headers),
     " Headers, ",
+    length(r.hheaders),
+    " MultiHeaders, ",
     isa(r.data, String) ? "$(sizeof(r.data)), Bytes in Body" : r.data,
     ")"
 )
 
-function readybytes(req::Request, size::Integer)
+function mh(res::Response, key::String)
+    if !haskey(res.mheaders, key)
+        v = res.mheaders[key] = String[]
+        v
+    else
+        res.mheaders[key]
+    end
+end
+
+function mh_push!(res::Response, key::String, value::String)
+    push!(mh(res, key), value)
+end
+
+function readbytes(req::Request, size::Integer)
     data = Base.readbytes(req.sock, size)
     req.ready_bytes += size
 end
 
-function readybytes(req::Request, cb::Function; size=0, buffer=1)
+function readbytes(req::Request, cb::Function; size=0, buffer=1)
     total = 0
 
     if size > 0
@@ -268,12 +288,12 @@ function readybytes(req::Request, cb::Function; size=0, buffer=1)
 
         while total <= size
             total += buffer
-            cb(readybytes(req, buffer))
+            cb(readbytes(req, buffer))
         end
     else
         while true
             total += buffer
-            cb(readybytes(req, buffer))
+            cb(readbytes(req, buffer))
         end
     end
     total
@@ -334,14 +354,31 @@ Base.next(it::LimitedBytesFileIterator, state) = begin
     d, new_state
 end
 
-readybytes_it(req::Request, size=0, buffer=1024) = begin
-    BytesReaderIterator(size, buffer) do size
-      readybytes(req, size)
+
+function FileResponse(filename, chunck::Bool=false; buffer::Integer=1024)
+    if isfile(filename)
+        (_, ext) = splitext(filename)
+        mime = length(ext)>1 && haskey(mimetypes,ext[2:end]) ? mimetypes[ext[2:end]] : "application/octet-stream"
+
+        if chunck
+            s = Iterable(BytesFileIterator(open(filename), buffer))
+        else
+            s = open(readbytes,filename)
+        end
+        Response(200, Dict{String,String}([("Content-Type",mime)]), s)
+    else
+        Response(404, "Not Found - file $filename could not be found")
     end
 end
 
-function readybytes(req::Request, size::Integer)
-    data = Base.readybytes(req.sock, size)
+readbytes_it(req::Request, size=0, buffer=1024) = begin
+    BytesReaderIterator(size, buffer) do size
+      readbytes(req, size)
+    end
+end
+
+function readbytes(req::Request, size::Integer)
+    data = Base.readbytes(req.sock, size)
     req.ready_bytes += sizeof(data)
     data
 end
@@ -362,7 +399,7 @@ readline_s(req::Request) = bytestring(readline(req))
 
 function body(req::Request)
     cl = parseint(req.headers["Content-Length"])
-    readybytes(req, cl)
+    readbytes(req, cl)
 end
 
 bodys(req::Request) =  bytestring(body(req))
