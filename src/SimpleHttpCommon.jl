@@ -10,12 +10,6 @@ const VERSION=v"0.1.0-dev"
 const MODULE = current_module()
 const NAME=module_name(MODULE)
 
-if Base.VERSION < v"0.4.0-dev"
-    using Docile
-    eval(:(@docstrings(manual = ["../README.md"])))
-end
-
-
 using SimpleHttpIO
 
 include("Chunk.jl")

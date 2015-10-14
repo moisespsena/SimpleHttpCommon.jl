@@ -233,7 +233,7 @@ type CloseRequestException <: Exception
 end
 
 
-@doc """Parse HTTP info on first line:
+"""Parse HTTP info on first line:
 
     METHOD RESOURCE PROTOCOL/PROTOCOL_VERSION
 
@@ -242,7 +242,7 @@ Example:
     GET /index.html
     GET /index.html HTTP/1.1
     GET /directory%20name/file.txt HTTP/1.1
-""" ->
+"""
 function parse_info(line::String, default_protocol::Union(Nothing, (String, String))=nothing)
     parts = split(line, " ")
     method = resource = protocol = nothing
