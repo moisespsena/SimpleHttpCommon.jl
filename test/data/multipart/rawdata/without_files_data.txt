@@ -1,0 +1,46 @@
+POST / HTTP/1.1
+Host: localhost:8888
+User-Agent: Mozilla/5.0 (X11; Linux i686; rv:40.0) Gecko/20100101 Firefox/40.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: pt-BR,pt;q=0.8,en-US;q=0.5,en;q=0.3
+Accept-Encoding: gzip, deflate
+Referer: http://moisespsena.dea.ufv.br:81/~moi/multipart/
+Cookie: csrftoken=1s41LA73NwpnAyWp9t28xecF0HaXxUOS; sessionid=0ne7hyih2wfgs3qn4pz4mazmfsg4gsyt
+Connection: keep-alive
+Content-Type: multipart/form-data; boundary=---------------------------6005799431068651669229319782
+Content-Length: 1117
+
+-----------------------------6005799431068651669229319782
+Content-Disposition: form-data; name="user_name"
+
+The User Name
+-----------------------------6005799431068651669229319782
+Content-Disposition: form-data; name="files_g1"; filename=""
+Content-Type: application/octet-stream
+
+
+-----------------------------6005799431068651669229319782
+Content-Disposition: form-data; name="files_g1"; filename=""
+Content-Type: application/octet-stream
+
+
+-----------------------------6005799431068651669229319782
+Content-Disposition: form-data; name="second_name"
+
+The Second Name
+-----------------------------6005799431068651669229319782
+Content-Disposition: form-data; name="files_g2"; filename=""
+Content-Type: application/octet-stream
+
+
+-----------------------------6005799431068651669229319782
+Content-Disposition: form-data; name="files_g2"; filename=""
+Content-Type: application/octet-stream
+
+
+-----------------------------6005799431068651669229319782
+Content-Disposition: form-data; name="description"
+
+The description
+content.
+-----------------------------6005799431068651669229319782--
