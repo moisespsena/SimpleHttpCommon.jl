@@ -77,7 +77,6 @@ Response(io::AbstractIOSocket, protocol::Protocol) = Response(
     0
 )
 
-
 chunked(r::Response) = isa(r.io, Chunk.IOChunked)
 
 function chunk(r::Response)
@@ -202,37 +201,32 @@ Base.flush(r::Response) = begin
 end
 
 function done(r::Response)
+    if !headers_sent(r)
+        start_writer(r)
+    end
+
     if r.buffer != nothing
         flush(r)
-        r.buffer = nothing
-        r.writer = chunked(r) ? Chunk.write : write_data
+    end
+
+    if r.data != nothing
+        data = r.data
+        r.data = nothing
+
+        if isa(data, Union(String, Array{Uint8}))
+            write(r, data)
+        elseif isiter(data)
+            for d in data
+                write(r, d)
+            end
+        else
+            throw(ResponseException("data_field", "Invalid Response.data 
+                type '$(typeof(data))'"), data=data)
+        end
     end
 
     if chunked(r)
         r._sent_bytes += Chunk.done(r.io)
-    elseif r._sent_bytes == 0
-        if r.data == nothing
-            write(r, "")
-        else
-            send(r)
-        end
-    end
-end
-
-function send(r::Response)
-    if r.data == nothing
-        return
-    end
-
-    if isa(r.data, Union(String, Array{Uint8}))
-        write(r, r.data)
-    elseif isiter(r.data)
-        for d in r.data
-            write(r, d)
-        end
-    else
-        throw(ResponseException("data_field",
-            string("Invalid Response.data type '", typeof(r.data), "'")))
     end
 end
 
@@ -315,14 +309,24 @@ show(io::IO, r::Response) = print(
 
 header(r::Response, key::String, value::String) = header(r.headers, key, value)
 
-function file(r::Response, filename::String, bsize::Integer=0; kwargs...)
+"""
+Download file on Respose
+
+flags:
+  :fdw - Force File Download
+"""
+function file(r::Response, filename::String, bsize::Integer=0; flags=(), kwargs...)
     finfo = fileinfo(filename)
 
     if finfo != nothing
         io = open(filename)
         ext, mime, fsize = finfo
         r.headers["Content-Type"] = mime
-        content_length(r, fsize)
+
+        if !chunked(r)
+            content_length(r, fsize)
+        end
+
         r.data = StreamReader.IOReaderIterator(io, fsize, bsize; kwargs...)
     else
         r.status = 404

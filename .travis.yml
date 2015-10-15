@@ -4,8 +4,5 @@ julia:
   - nightly
   - 0.3
   - 0.3.10
-before_install:
-  - julia -e 'Pkg.clone("https://github.com/moisespsena/StreamReader.jl")'
-  - julia -e 'Pkg.clone("https://github.com/moisespsena/SimpleHttpIO.jl")'
 after_success:
   - julia -e "Pkg.add(\"Coverage\"); cd(Pkg.dir(\"${JL_PKG}\")); using Coverage; result=process_folder(); println(\"====== CODECOV submiting ======\"); Codecov.submit(result); println(\"====== COVERALLS submiting ======\"); Coveralls.submit(result);"

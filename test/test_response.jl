@@ -64,18 +64,36 @@ facts("Test Response.jl") do
             end
 
             context("chunked") do
-                r = mk_res()
-                r.headers = ["Transfer-Encoding" => "chunked"]
-                S.send_headers(r)
-                @fact headers_sent(r) --> true
-                @fact content_length(r) --> -1
-
-                r = mk_res()
-                r.headers = ["Transfer-Encoding" => "chunked", "Content-Length" => "10"]
-
-                fre(;key="invalid_header",
-                    header="Content-Length") do
+                context("manual") do
+                    r = mk_res()
+                    r.headers = ["Transfer-Encoding" => "chunked"]
                     S.send_headers(r)
+                    @fact headers_sent(r) --> true
+                    @fact content_length(r) --> -1
+
+                    r = mk_res()
+                    r.headers = ["Transfer-Encoding" => "chunked", "Content-Length" => "10"]
+
+                    fre(;key="invalid_header",
+                        header="Content-Length") do
+                        S.send_headers(r)
+                    end
+                end
+
+                context("chunk()") do
+                    r = mk_res()
+                    chunk(r)
+                    S.send_headers(r)
+                    @fact headers_sent(r) --> true
+                    @fact content_length(r) --> -1
+
+                    r = mk_res()
+                    r.headers = ["Transfer-Encoding" => "chunked", "Content-Length" => "10"]
+
+                    fre(;key="invalid_header",
+                        header="Content-Length") do
+                        S.send_headers(r)
+                    end
                 end
             end
         end
@@ -438,6 +456,28 @@ facts("Test Response.jl") do
                 write_block(i, b)
             end
 
+            S.done(r)
+
+            io = r.io
+            seekstart(io.io)
+
+            edata = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+            @fact UTF8String(readbytes(io.io, S.headers_size(r))) --> edata
+            @fact String[UTF8String(_) for _ in collect(S.Chunk.iterator(io))] --> blocks
+        end
+
+        context("chunked on done") do
+            r = mk_res()
+            r.headers = S.headers()
+            chunk(r)
+
+            blocks = String["For God so loved the world, that he gave his ",
+                    "only begotten Son, that whosoever ",
+                    "believeth in him should not perish, but ",
+                    "have everlasting life.",
+                    "(John 3:16)"]
+                    
+            r.data = blocks
             S.done(r)
 
             io = r.io
