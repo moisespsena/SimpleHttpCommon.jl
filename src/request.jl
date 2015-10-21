@@ -13,68 +13,78 @@ export Request,
        Reader,
        save,
        content_length,
-       content_length!,
+       loaded_content_length,
+       content_type,
        StringReader,
        event,
        event!,
        CloseRequestException,
-       init
+       init,
+       read_info,
+       read_headers,
+       parse_data
 
+using JSON
 
 type UploadFile
-    name::String
-    content_type::String
+    name::STR_TYPE
+    content_type::STR_TYPE
     size::Integer
     io::IO
-    path::String
-    headers::Associative{String, String}
+    path::STR_TYPE
+    headers::Associative{STR_TYPE, STR_TYPE}
 end
 
-UploadFile(n::String, c::String, s::Integer, io::IO; headers=Dict{String,String}()) = UploadFile(n, c, s, io, "", headers)
+UploadFile(n::STR_TYPE, c::STR_TYPE, s::Integer, io::IO; headers=Dict{STR_TYPE,STR_TYPE}()) = UploadFile(n, c, s, io, "", headers)
 
 
 type RequestException <: Exception
     info
 end
 
-RequestException(key::Union(String, (String...)), message::String; kwargs...) = begin
+RequestException(key::Union(STR_TYPE, (STR_TYPE...)), message::STR_TYPE; kwargs...) = begin
     all = append!(Any[(:key, key), (:message, message)], kwargs)
     RequestException(Dict{Any, Any}(all))
 end
 
 type Request
     io::AbstractIOSocket
-    protocol::Union(Nothing,Protocol)
-    method::Union(Nothing,String)
-    resource::Union(Nothing,String)
+    protocol::Union(N_TYPE,Protocol)
+    method::Union(N_TYPE,STR_TYPE)
+    resource::Union(N_TYPE,STR_TYPE)
     headers::Headers
-    data::Union(Nothing,String)
-    env::Associative{Union(String,Symbol), Any}
+    data::Union(N_TYPE,STR_TYPE)
+    env::Associative{Union(STR_TYPE,Symbol), Any}
     finished::Bool
-    query::Union(Nothing,String)
-    q::Associative{String, Any}
-    p::Associative{String, Any}
+    query::Union(N_TYPE,STR_TYPE)
+    get::Associative{STR_TYPE, Any}
+    post::Associative{STR_TYPE, Any}
     events::Events
     _read_bytes::Integer
     _header_size::Integer
     l::Associative{Any, Any}
     websocket
-    content_length::Integer
+    _content_length::Integer
     chunk::Bool
-    files::Union(Nothing,Array{UploadFile})
+    files::Union(N_TYPE,Array{UploadFile})
+    _content_type::Union(N_TYPE, STR_TYPE)
 end
 
 Request(io::AbstractIOSocket) = Request(
-    io, N, N, N, headers(), N, Dict{Union(String,Symbol),Any}(), false,
+    io, N, N, N, headers(), N, Dict{Union(STR_TYPE,Symbol),Any}(), false,
     N, params(), params(), Events(),
-    0, 0, Dict{Any,Any}(), N, 0, false, nothing
+    0, 0, Dict{Any,Any}(), N, 0, false, N, N
 )
+
 
 ready_bytes(r::Request) = r._ready_bytes
 header_size(r::Request) = r._header_size
+content_length(r::Request) = r._content_length
+loaded_content_length(r::Request) = r._content_length - r._read_bytes - r._header_size
+content_type(r::Request) = r._content_type
 
 trigger(r::Request, e::Event) = trigger(r.events, e, r)
-listener(r::Request, key::Union(Symbol,String), cb::Function) = listener(r.events, key, cb)
+listener(r::Request, key::Union(Symbol,STR_TYPE), cb::Function) = listener(r.events, key, cb)
 
 show(io::IO, r::Request) = print(
     io,
@@ -87,10 +97,10 @@ show(io::IO, r::Request) = print(
     " Headers, ",
     length(r.env),
     " Enviroment, ",
-    isa(r.data, String) ? "$(sizeof(r.data)) Bytes in Body" : r.data,
+    isa(r.data, STR_TYPE) ? "$(sizeof(r.data)) Bytes in Body" : r.data,
     ", ",
     r.query,
-    " Query String,",
+    " Query STR_TYPE,",
     r._read_bytes,
     " Bytes read,",
     r._header_bytes,
@@ -98,51 +108,44 @@ show(io::IO, r::Request) = print(
     ")"
 )
 
-function rp(r::Request, key::String, default=Nothing)
-    try
-        return r.p[key]
-    catch e
-        try
-            return r.q[key]
-        catch e
-            if default != Nothing
-                return default
-            else
-                throw(KeyError(key))
-            end
-        end
-    end
+soma(a::Integer, b::Integer) = (a + b; true)
+
+function soma(a::Integer, b::Integer)
+    a + b
+    true
 end
 
-header(r::Request, key::String, value::String) = header(r.headers, key, value)
+header(r::Request, key::STR_TYPE, value::STR_TYPE) = header(r.headers, key, value)
 
 Base.read{T}(r::Request, data_type::Type{T}, size::Integer) = begin
-    data = Base.read(r.sock, data_type, size)
+    data = Base.read(r.io.io, data_type, size)
     r._read_bytes += size
     data
 end
 
+Base.read(r::Request, size::Integer) = Base.read(r, BYTE_TYPE, size)
+
 Base.readuntil(r::Request, delim) = begin
-    data = Base.readuntil(r.io, delim)
+    data = Base.readuntil(r.io.io, delim)
     r._read_bytes += sizeof(data)
     data
 end
 
-Base.readline(r::Request) = Base.readuntil(r, '\n')
+Base.readline(r::Request) = readline(r.io)
 
 using StreamReader
 
 function Reader{T,D}(r::Request, bp::PartsIterator; read_type::Type{T} = BYTE_TYPE,
-    data_type::Type{D} = Nothing, pre_start::Union(Nothing,Function) = nothing,
+    data_type::Type{D} = N_TYPE, pre_start::Union(N_TYPE,Function) = N,
     kwargs...)
     ReaderIterator(bp; kwargs...) do ri
         ri.read = (size) -> Base.read(r, read_type, size)
 
-        if data_type != Nothing
+        if data_type != N_TYPE
             set_data_type(ri, data_type)
         end
 
-        if pre_start != nothing
+        if pre_start != N
             pre_start(ri)
         end
     end
@@ -160,10 +163,7 @@ function save(r::Request, out::IO, len::Integer, bsize::Integer=0;
     end
 end
 
-content_length(r::Request) = r.content_length - r._read_bytes - r._header_size
-
-save(r::Request, out::IO, bsize::Integer=0; kwargs...) = save(r, out,
-    r.content_length - r._read_bytes - r._header_size, bsize; kwargs...)
+save(r::Request, out::IO, bsize::Integer=0; kwargs...) = save(r, out, r._content_length, bsize; kwargs...)
 
 >>(i::ReaderIterator, o::IO) = begin
     for data in i
@@ -171,7 +171,7 @@ save(r::Request, out::IO, bsize::Integer=0; kwargs...) = save(r, out,
     end
 end
 
-function StringReader{D<:String}(r::Request, pi::PartsIterator;
+function StringReader{D<:STR_TYPE}(r::Request, pi::PartsIterator;
     data_type::Type{D} = UTF8String, kwargs...)
     Reader(io, pi; data_type=data_type, kwargs...)
 end
@@ -180,13 +180,13 @@ StringReader(r::Request, len::Integer, bsize::Integer=0; kwargs...) = StringRead
     StreamReader.PartsIterator(len, bsize); kwargs...)
 
 
-body(req::Request) = read(req, content_length(req))
-
+body(req::Request) = read(req, req._content_length)
 bodys(req::Request) =  bytestring(body(req))
 
 function read_first_line(io::AbstractIOSocket)
-    s, line = readline_bare_str(io)
-
+    line = readline_bare_str(io)
+    s = sizeof(line) + 2
+    
     if line == ""
         throw(RequestException("invalid_header", "Empty first line."; line_size=s, line=line))
     end
@@ -225,6 +225,19 @@ function read_headers(r::Request)
     s, lines, r.headers = read_headers(r.io)
     r._read_bytes += s
     r._header_size = s
+
+    cl = get(r.headers, r.protocol.header_msg_size, N)
+
+    if cl != N
+        r._content_length = parseint(cl)
+    end
+
+    ct = get(r.headers, r.protocol.header_msg_type, N)
+
+    if ct != N
+        r._content_type = ct
+    end
+
     r
 end
 
@@ -243,15 +256,15 @@ Example:
     GET /index.html HTTP/1.1
     GET /directory%20name/file.txt HTTP/1.1
 """
-function parse_info(line::String, default_protocol::Union(Nothing, (String, String))=nothing)
+function parse_info(line::STR_TYPE, default_protocol::Union(N_TYPE, (STR_TYPE, STR_TYPE))=N)
     parts = split(line, " ")
-    method = resource = protocol = nothing
+    method = resource = protocol = N
 
     if length(parts) < 2 || length(parts) > 3
         throw(RequestException(("invalid_header_info", "invalid_format"), "Header " *
             repr(line) * ", not contains a valid format."; line=line))
     elseif length(parts) == 2
-        if default_protocol == nothing
+        if default_protocol == N
             throw(RequestException(("invalid_header_info", "protocol_not_informed"),
                 "Protocol isn't informed."; line=line))
         else
@@ -274,7 +287,7 @@ function parse_info(line::String, default_protocol::Union(Nothing, (String, Stri
 end
 
 function read_info(io::AbstractIOSocket, protocols::Protocols,
-    default_protocol::Union(Nothing, (String, String))=nothing)
+    default_protocol::Union(N_TYPE, (STR_TYPE, STR_TYPE))=N)
     line = readline_bare_str(io)
     s = sizeof(line) + 2
 
@@ -295,7 +308,7 @@ function read_info(io::AbstractIOSocket, protocols::Protocols,
         end
     end
 
-    if protoc != nothing
+    if protoc != N
         protoc = protocol(protocols, tuple(protoc...))
     end
 
@@ -303,19 +316,19 @@ function read_info(io::AbstractIOSocket, protocols::Protocols,
 end
 
 function read_info(r::Request, protocols::Protocols,
-    default_protocol::Union(Nothing, (String, String))=nothing)
+    default_protocol::Union(N_TYPE, (STR_TYPE, STR_TYPE))=N)
     (r._read_bytes, r.method, r.resource, r.protocol, r.query) = read_info(r.io,
         protocols, default_protocol)
     r
 end
 
 
-function init(r::Request, protocols, default_protocol::Protocol=nothing)
-    read_info(r, protocols, default_protocol != nothing? key(default_protocol) : nothing)
+function init(r::Request, protocols, default_protocol::Union(Protocol, N_TYPE)=N)
+    read_info(r, protocols, default_protocol != N? key(default_protocol) : N)
     read_headers(r)
 
-    if haskey(r.headers, "Content-Length")
-        r.content_length = integer(h["Content-Length"])
+    if r.query != N
+        r.get = parse_qsr(r.query)
     end
 
     r.protocol.req_post_init(r)
@@ -328,7 +341,27 @@ function init(r::Request, protocols, default_protocol::Protocol=nothing)
     r, res
 end
 
-function multipart_boundary(content_type::String)
+
+function parse_data(r::Request)
+    if r._content_type != N
+        ct = r._content_type
+        if search(ct, "application/x-www-form-urlencoded").start > 0
+            r.post = parse_qsr(bodys(r))
+        elseif search(ct, "application/json").start > 0
+            r.post = JSON.parse(bodys(r))
+        elseif search(ct, "multipart/form-data").start > 0
+            parse_multipart_formdata(r)
+        end
+        return true
+    end
+    false
+end
+
+
+param(r::Request, key::STR_TYPE, default=N) = (haskey(r.get, key) ? 
+    r.get[key] : (haskey(r.post, key) ? r.post[key] : default))
+
+function multipart_boundary(content_type::STR_TYPE)
     d = content_type
     b_pos = search(d, "boundary=")
     e_pos = search(d, "; ", b_pos.stop)
@@ -338,8 +371,8 @@ function multipart_boundary(content_type::String)
     boundary, string(boundary, "--")
 end
 
-function parse_content_disposition(s::String)
-    d = Dict{String, String}
+function parse_content_disposition(s::STR_TYPE)
+    d = Dict{STR_TYPE, STR_TYPE}
     disposition, s = split(s, ";", 2)
 
     name_p = search(s, " name=\"")
@@ -401,8 +434,8 @@ function boundary_writer(io::AbstractIOSocket, boundaryd::BoundaryTuple)
     s, stop, oio
 end
 
-function parse_multipart_formdata_part(io::AbstractIOSocket, boundaryd::BoundaryTuple, encoding::String, d, files)
-   s, lnum, h = read_headers(io; h=Dict{String, String}())
+function parse_multipart_formdata_part(io::AbstractIOSocket, boundaryd::BoundaryTuple, encoding::STR_TYPE, d, files)
+   s, lnum, h = read_headers(io; h=Dict{STR_TYPE, STR_TYPE}())
    stop = true
 
    if length(h) > 0
@@ -437,7 +470,7 @@ function parse_multipart_formdata_part(io::AbstractIOSocket, boundaryd::Boundary
 end
 
 
-function parse_multipart_formdata(io::AbstractIOSocket, boundary::(String, String), encoding::String="")
+function parse_multipart_formdata(io::AbstractIOSocket, boundary::(STR_TYPE, STR_TYPE), encoding::STR_TYPE="")
     # read boundary on first content line
     line = readline_bare(io)
     s = sizeof(line) + 2

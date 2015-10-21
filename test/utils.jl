@@ -1,12 +1,15 @@
 using FactCheck
 using SimpleHttpCommon
 const S = SimpleHttpCommon
+const N = S.N
+const N_TYPE = S.N_TYPE
 const TEST_DIR = dirname(@__FILE__)
-const CRLF = "\r\n"
+const CRLF = S.CRLF
+const STR_TYPE = S.STR_TYPE
 
-function buffer(data = nothing; start=false)
+function buffer(data = N; start=false)
     b = IOBuffer()
-    if data != nothing
+    if data != N
         write(b, data)
     end
 
@@ -27,7 +30,7 @@ end
 
 type NOT_DEFINED end
 
-function fact_catch{T}(fn::Function, extype::Type{T}, einfo=nothing; kwargs...)
+function fact_catch{T}(fn::Function, extype::Type{T}, einfo=N; kwargs...)
     try
         fn()
         throw(ExceptionNotRaised((extype, einfo)))
@@ -38,13 +41,13 @@ function fact_catch{T}(fn::Function, extype::Type{T}, einfo=nothing; kwargs...)
 
         for (key, expected_value) in kwargs
             value = get(e.info, key, NOT_DEFINED)
-            @fact value --> expected_value string("Key value mismatch ", extype, ".info[", repr(key), "]")
+            @fact value --> expected_value string("Key value mismatch $extype.info[$(repr(key))]. Info is: $(repr(e.info))")
         end
     end
 end
 
-fre(fn::Function, einfo=nothing; kwargs...) = fact_catch(fn, S.ResponseException; kwargs...)
-frqe(fn::Function, einfo=nothing; kwargs...) = fact_catch(fn, S.RequestException; kwargs...)
+fre(fn::Function, einfo=N; kwargs...) = fact_catch(fn, S.ResponseException; kwargs...)
+frqe(fn::Function, einfo=N; kwargs...) = fact_catch(fn, S.RequestException; kwargs...)
 
 const str = UTF8String
 

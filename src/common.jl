@@ -15,18 +15,16 @@ end
 
 const str = string
 
-const N = nothing
+
+typealias Headers{K<:STR_TYPE, V<:Union(STR_TYPE, Array{STR_TYPE})} Associative{K, V}
 
 
-typealias Headers{K<:String, V<:Union(String, Array{String})} Associative{K, V}
+headers(args...) =  OrderedDict{STR_TYPE,Union(STR_TYPE,Array{STR_TYPE})}(args...)
+params(args...) = OrderedDict{STR_TYPE,Any}(args...)
 
-
-headers(args...) =  OrderedDict{String,Union(String,Array{String})}(args...)
-params(args...) = OrderedDict{String,Any}(args...)
-
-function header(h::Headers, key::String, value::String)
+function header(h::Headers, key::STR_TYPE, value::STR_TYPE)
     if haskey(h, key)
-        if isa(h[key], String)
+        if isa(h[key], STR_TYPE)
             h[key] = String[h[key], value]
         else
             push!(h[key], value)
@@ -39,7 +37,7 @@ end
 isiter(obj) = method_exists(Base.next, (typeof(obj), Integer))
 
 
-function fileinfo(filename::String)
+function fileinfo(filename::STR_TYPE)
     if isfile(filename)
         (_, ext) = splitext(filename)
 
@@ -54,16 +52,16 @@ function fileinfo(filename::String)
 
         return ext, mime, filesize(filename)
     end
-    return nothing
+    return N
 end
 
 
-function parse_qs(query::String)
+function parse_qs(query::STR_TYPE)
     if !('=' in query)
         return throw("Not a valid query string: $query, must contain at least one key=value pair.")
     end
 
-    q = Dict{String,Any}()
+    q = Dict{STR_TYPE,Any}()
 
     for set in split(query, "&")
         key, val = split(set, "=")
@@ -80,10 +78,10 @@ function parse_qs(query::String)
     q
 end
 
-function parse_qsr(allq::Associative{String, Any})
+function parse_qsr(allq::Associative{STR_TYPE, Any})
     akeys = reverse(sort(collect(keys(allq))))
 
-    q = OrderedDict{String,Any}()
+    q = OrderedDict{STR_TYPE,Any}()
 
     for key in akeys
         skeys = split(key, ".")
@@ -93,7 +91,7 @@ function parse_qsr(allq::Associative{String, Any})
         if !isempty(pkeys)
             for (i, k) in enumerate(pkeys)
                 if !haskey(d, k)
-                    d[k] = OrderedDict{String,Any}()
+                    d[k] = OrderedDict{STR_TYPE,Any}()
                 end
                 d = d[k]
             end
@@ -105,14 +103,14 @@ function parse_qsr(allq::Associative{String, Any})
     q
 end
 
-parse_qsr(query::String) = parse_qsr(parse_qs(query))
+parse_qsr(query::STR_TYPE) = parse_qsr(parse_qs(query))
 
 
 import Base.mktemp
 
-if !method_exists(mktemp, (String,))
+if !method_exists(mktemp, (STR_TYPE,))
     # Create and return the name of a temporary file along with an IOStream
-    function mktemp(parent::String)
+    function mktemp(parent::STR_TYPE)
         b = joinpath(parent, "tmpXXXXXX")
         p = ccall(:mkstemp, Int32, (Ptr{UInt8},), b) # modifies b
         systemerror(:mktemp, p == -1)
@@ -135,7 +133,7 @@ end
 export Event, add, pop, target, targets, listener, trigger, Events
 
 type Event
-    name::String
+    name::STR_TYPE
     target
     args
     kwargs
@@ -143,7 +141,7 @@ type Event
     data
 end
 
-Event(name::String; args=(), kwargs...) = Event(name, nothing, args, kwargs, false, Dict())
+Event(name::STR_TYPE; args=(), kwargs...) = Event(name, N, args, kwargs, false, Dict())
 
 add(e::Event, target) = (e.target = (e.target, target); e)
 pop(e::Event) = (e.target = e.target[1]; e)
@@ -152,7 +150,7 @@ target(e::Event) = e.target[2]
 function targets(e::Event)
     local targets = {}
     t = e.target
-    while t != nothing
+    while t != N
         push!(t)
         t = t[1]
     end
@@ -163,8 +161,8 @@ immutable type Events
     listeners
 end
 
-Events(args::(Union(String,Symbol), Union(Array{Function}, Function))...; kwargs...) = begin
-    evs = Events(Dict{String, Array{Function}}())
+Events(args::(Union(STR_TYPE,Symbol), Union(Array{Function}, Function))...; kwargs...) = begin
+    evs = Events(Dict{STR_TYPE, Array{Function}}())
 
     for (key, cb) in chain(args, kwargs)
         if isa(cb, Function)
@@ -178,10 +176,10 @@ Events(args::(Union(String,Symbol), Union(Array{Function}, Function))...; kwargs
     evs
 end
 
-function listener(events::Events, key::Union(Symbol,String), cb::Function)
+function listener(events::Events, key::Union(Symbol,STR_TYPE), cb::Function)
     key = string(key)
-    l = get(events.listeners, key, nothing)
-    if l == nothing
+    l = get(events.listeners, key, N)
+    if l == N
         l = Function[]
         events.listeners[key] = l
     end

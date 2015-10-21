@@ -10,6 +10,9 @@ export IOChunked,
        iterator,
        ChunkIterator
 
+const N = SimpleHttpIO.N
+const N_TYPE = SimpleHttpIO.N_TYPE
+
 type IOChunked <: AbstractIOSocket
     io::IO
     env::Associative
@@ -32,7 +35,7 @@ function size(io::IOChunked, loop=true)
         byte = readbyte(io)
         byte == '\n' || throw(ChunkException([:keys => ("parse_error", "unexpected_byte"),
                               :msg => "Expected \\n byte after \\r.", :byte => byte]))
-        nothing
+        N
     else
         d = UTF8String(append!(BYTE_TYPE[byte], readline_bare(io)))
         # parse hex data
@@ -60,10 +63,10 @@ end
 
 function block(io::IOChunked)
     s = size(io)
-    if s != nothing
+    if s != N
         data(io, s)
     end
-    nothing
+    N
 end
 
 
@@ -74,7 +77,7 @@ end
 const iterator = ChunkIterator
 
 Base.start(r::ChunkIterator) = size(r.io)
-Base.done(r::ChunkIterator, state) = state == nothing
+Base.done(r::ChunkIterator, state) = state == N
 Base.next(r::ChunkIterator, state) = begin
     d = data(r.io, state)
     new_state = size(r.io)

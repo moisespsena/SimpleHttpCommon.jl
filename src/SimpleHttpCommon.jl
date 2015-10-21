@@ -8,9 +8,13 @@ module SimpleHttpCommon
 
 const VERSION=v"0.1.0-dev"
 const MODULE = current_module()
-const NAME=module_name(MODULE)
+const NAME = module_name(MODULE)
 
 using SimpleHttpIO
+
+const N = SimpleHttpIO.N
+const N_TYPE = SimpleHttpIO.N_TYPE
+const STR_TYPE = SimpleHttpIO.STR_TYPE
 
 include("Chunk.jl")
 

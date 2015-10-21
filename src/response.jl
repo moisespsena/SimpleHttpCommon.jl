@@ -11,7 +11,9 @@ export Response,
        buffered,
        chunk,
        chuncked,
-       file
+       file,
+       content_length,
+       content_length!
 
 default_response_headers() = headers([
     ("Server"            , "Julia/$(Base.VERSION) at $NAME/$VERSION"),
@@ -23,12 +25,10 @@ type ResponseException <: Exception
     info
 end
 
-ResponseException(key::Union(String, (String...)), message::String; kwargs...) = begin
+ResponseException(key::Union(STR_TYPE, (STR_TYPE...)), message::STR_TYPE; kwargs...) = begin
     all = append!(Any[(:key, key), (:message, message)], kwargs)
     ResponseException(Dict{Any, Any}(all))
 end
-
-typealias NothingOrFunction Union(Nothing, Function)
 
 type Response
     io::AbstractIOSocket
@@ -38,8 +38,8 @@ type Response
     finished::Bool
     protocol::Protocol
     _headers_sent::Bool
-    writer::Union(Nothing,Function)
-    buffer::Union(Nothing, IO)
+    writer::Union(N_TYPE,Function)
+    buffer::Union(N_TYPE, IO)
     content_length::Integer
     _sent_bytes::Integer
     _headers_size::Integer
@@ -50,14 +50,14 @@ sent_bytes(r::Response) = r._sent_bytes
 
 const EMPTY_CL = -1
 
-function start_writer(r::Response, data = nothing)
-    if data != nothing && !chunked(r) && r.content_length <= 0 && r.buffer == nothing
+function start_writer(r::Response, data = N)
+    if data != N && !chunked(r) && r.content_length <= 0 && r.buffer == N
         content_length(r, sizeof(data))
     end
 
     start(r)
 
-    if data != nothing
+    if data != N
         Base.write(r, data)
     end
 end
@@ -66,12 +66,12 @@ Response(io::AbstractIOSocket, protocol::Protocol) = Response(
     io,
     protocol.default_status,
     default_response_headers(),
-    nothing,
+    N,
     false,
     protocol,
     false,
     start_writer,
-    nothing,
+    N,
     EMPTY_CL,
     0,
     0
@@ -142,7 +142,7 @@ function send_headers(r::Response)
         r.protocol.status_codes[r.status], CRLF))
 
     for (header, value) in r.headers
-        if isa(value, String)
+        if isa(value, STR_TYPE)
             write_data(r, string(header, ": ", value, CRLF))
         else
             for v in value
@@ -158,7 +158,7 @@ end
 buffered_writer(r, data) = write(r.buffer, data)
 
 function start(r::Response)
-    if r.buffer == nothing
+    if r.buffer == N
         send_headers(r)
         r.writer = chunked(r) ? Chunk.write : (
             r.content_length > 0 ? write_data_check: write_data
@@ -168,13 +168,13 @@ function start(r::Response)
     end
 end
 
-Base.write(r::Response, data::String) = r.writer(r, data)
+Base.write(r::Response, data::STR_TYPE) = r.writer(r, data)
 Base.write(r::Response, data::Array{Uint8}) = r.writer(r, data)
 
-<<(r::Response, data::String) = r.writer(r, data)
+<<(r::Response, data::STR_TYPE) = r.writer(r, data)
 <<(r::Response, data::Array{Uint8}) = r.writer(r, data)
 
->>(data::String, r::Response) = r.writer(r, data)
+>>(data::STR_TYPE, r::Response) = r.writer(r, data)
 >>(data::Array{Uint8}, r::Response) = r.writer(r, data)
 
 
@@ -205,15 +205,15 @@ function done(r::Response)
         start_writer(r)
     end
 
-    if r.buffer != nothing
+    if r.buffer != N
         flush(r)
     end
 
-    if r.data != nothing
+    if r.data != N
         data = r.data
-        r.data = nothing
+        r.data = N
 
-        if isa(data, Union(String, Array{Uint8}))
+        if isa(data, Union(STR_TYPE, Array{Uint8}))
             write(r, data)
         elseif isiter(data)
             for d in data
@@ -289,7 +289,7 @@ function sender(f::Function, r::Response, chunk::Bool = false)
 end
 
 function buffered(r::Response)
-    if r.buffer == nothing
+    if r.buffer == N
         r.buffer = IOBuffer()
     end
 end
@@ -303,11 +303,11 @@ show(io::IO, r::Response) = print(
     ", ",
     length(r.headers),
     " Headers, ",
-    isa(r.data, String) ? "$(sizeof(r.data)), Bytes in Body" : typeof(r.data),
+    isa(r.data, STR_TYPE) ? "$(sizeof(r.data)), Bytes in Body" : typeof(r.data),
     ")"
 )
 
-header(r::Response, key::String, value::String) = header(r.headers, key, value)
+header(r::Response, key::STR_TYPE, value::STR_TYPE) = header(r.headers, key, value)
 
 """
 Download file on Respose
@@ -315,10 +315,10 @@ Download file on Respose
 flags:
   :fdw - Force File Download
 """
-function file(r::Response, filename::String, bsize::Integer=0; flags=(), kwargs...)
+function file(r::Response, filename::STR_TYPE, bsize::Integer=0; flags=(), kwargs...)
     finfo = fileinfo(filename)
 
-    if finfo != nothing
+    if finfo != N
         io = open(filename)
         ext, mime, fsize = finfo
         r.headers["Content-Type"] = mime

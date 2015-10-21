@@ -34,9 +34,10 @@ const HTTP_1_1 = Protocol("HTTP", "1.1", STATUS_CODES,
     _prepare_http_response_headers,
     200,
     ("Transfer-Encoding", "chunked"),
+    "Content-Type",
     "Content-Length",
-    (req) -> nothing,
-    (res) -> nothing
+    (req) -> N,
+    (res) -> N
 )
 
 protocol!(HTTP_1_1)
