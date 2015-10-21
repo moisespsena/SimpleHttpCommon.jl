@@ -2,7 +2,7 @@ export HTTPRequest,
     HTTPResponse,
     HTTP_1_1
 
-function _prepare_http_response_headers(r::Response)
+function preparehttpresponseheaders(r::Response)
     h_chunk, h_chunk_value = r.protocol.header_msg_chunk
 
     if chunked(r)
@@ -26,13 +26,16 @@ function _prepare_http_response_headers(r::Response)
     end
 end
 
-const HTTP_1_1 = Protocol("HTTP", "1.1", STATUS_CODES,
+const HTTP_1_1 = Protocol(
+    "HTTP",
+    "1.1",
+    STATUS_CODES,
     sort(filter(x -> (x > 90 && x < 200) || x in (204, 304),
         [_ for _ in keys(STATUS_CODES)]
     )),
     String[],
-    _prepare_http_response_headers,
-    200,
+    preparehttpresponseheaders,
+    DefaultStatus(200, 400, 404, 500),
     ("Transfer-Encoding", "chunked"),
     "Content-Type",
     "Content-Length",

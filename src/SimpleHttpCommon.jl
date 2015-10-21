@@ -18,9 +18,9 @@ const STR_TYPE = SimpleHttpIO.STR_TYPE
 
 include("Chunk.jl")
 
-export readline_bare,
-       readline_str,
-       readline_bare_str,
+export readlinebare,
+       readlinestr,
+       readlinebarestr,
        AbstractIOSocket,
        writeln,
        CRLF,

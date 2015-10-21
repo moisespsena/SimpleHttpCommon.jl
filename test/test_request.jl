@@ -15,7 +15,7 @@ facts("Test Request.jl") do
             seekstart(io)
 
             frqe(;message="Empty first line.") do
-                S.read_first_line(sio)
+                S.readfirstline(sio)
             end
 
             io = IOBuffer()
@@ -24,7 +24,7 @@ facts("Test Request.jl") do
             line = "first line"
             ws = wclf(io, line)
             seekstart(io)
-            @fact S.read_first_line(sio) --> (ws, line)
+            @fact S.readfirstline(sio) --> (ws, line)
 
             io = IOBuffer()
             sio = IOSocket(io)
@@ -39,7 +39,7 @@ facts("Test Request.jl") do
 
             eh = ["H1"=>"H1 value","HM"=>String["HM value 1","HM value 2"]]
 
-            s, lnum, h = S.read_headers(sio)
+            s, lnum, h = S.readheaders(sio)
             @fact ws --> hs
             @fact s --> hs
             @fact lnum --> 4
@@ -56,14 +56,14 @@ facts("Test Request.jl") do
 
                 if length(parts) == 2
                     m, r = parts
-                    pr = default_protocol = as_tuple(S.FAKE_PROTOCOL)
+                    pr = default_protocol = astuple(S.FAKE_PROTOCOL)
                 else
                     m, r, pr = parts
                     pr = split(pr, "/")
                     default_protocol = N
                 end
 
-                method, resource, protocol = S.parse_info(line, default_protocol)
+                method, resource, protocol = S.parseinfo(line, default_protocol)
                 @fact method --> m
                 @fact r --> resource
                 @fact protocol --> pr
@@ -82,7 +82,7 @@ facts("Test Request.jl") do
 
                     if length(parts) == 2
                         m, rs = parts
-                        pr = default_protocol = as_tuple(S.FAKE_PROTOCOL)
+                        pr = default_protocol = astuple(S.FAKE_PROTOCOL)
                         protocol!(S.FAKE_PROTOCOL)
                     else
                         m, rs, pr = parts
@@ -91,7 +91,7 @@ facts("Test Request.jl") do
                     end
 
                     r = S.Request(IOSocket(io))
-                    S.read_info(r, S.PROTOCOLS, default_protocol)
+                    S.readinfo(r, S.PROTOCOLS, default_protocol)
 
                     @fact r.method --> m
                     @fact r.resource --> rs
@@ -127,12 +127,12 @@ facts("Test Request.jl") do
 
                     req = Request(IOSocket(req_io))
                     init(req, S.PROTOCOLS)
-                    data_parsed = parse_data(req)
+                    data_parsed = parsedata(req)
 
                     @fact data_parsed --> true
                     @fact req.protocol --> HTTP_1_1
-                    @fact content_length(req) --> sizeof(tdata)
-                    @fact content_type(req) --> tk
+                    @fact req.content_length --> sizeof(tdata)
+                    @fact req.content_type --> tk
                     @fact req.get --> ["getvar"=>{"gvalue"}]
                     @fact req.post --> tdatae
                 end
@@ -143,11 +143,11 @@ facts("Test Request.jl") do
     context("parse multipart/form-data") do
         sample_path = joinpath(TEST_DIR, "data", "multipart", "rawdata", "sample.txt")
         sio = IOSocket(open(sample_path, "r"))
-        s, info = S.read_info(sio, S.PROTOCOLS)
-        size, linenum, headers = S.read_headers(sio)
+        s, info = S.readinfo(sio, S.PROTOCOLS)
+        size, linenum, headers = S.readheaders(sio)
         content_size = parseint(headers["Content-Length"])
-        boundary = S.multipart_boundary(headers["Content-Type"])
-        s, d, files = S.parse_multipart_formdata(sio, boundary)
+        boundary = S.multipartboundary(headers["Content-Type"])
+        s, d, files = S.parsempfd(sio, boundary)
 
         for f in files
             fpath = joinpath(TEST_DIR, "data", "multipart", "files", f.name)

@@ -37,7 +37,7 @@ function size(io::IOChunked, loop=true)
                               :msg => "Expected \\n byte after \\r.", :byte => byte]))
         N
     else
-        d = UTF8String(append!(BYTE_TYPE[byte], readline_bare(io)))
+        d = UTF8String(append!(BYTE_TYPE[byte], readlinebare(io)))
         # parse hex data
         s = parseint(d, 16)
 

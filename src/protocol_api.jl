@@ -3,7 +3,23 @@ export register,
     protocol!,
     PROTOCOLS,
     key,
-    as_tuple
+    astuple,
+    DefaultStatus
+
+immutable type DefaultStatus
+    default::Integer
+    bad_request::Integer
+    not_found::Integer
+    system_error::Integer
+end
+
+DefaultStatus(;kwargs...) = begin
+    o = DefaultStatus(-1, -1, -1, -1)
+    for (k, v) in kwargs
+        setfield(o, k, v)
+    end
+    o
+end
 
 immutable type Protocol{SCK<:Number,SCV<:STR_TYPE}
     name::STR_TYPE
@@ -12,7 +28,7 @@ immutable type Protocol{SCK<:Number,SCV<:STR_TYPE}
     status_wo_msg::Array{SCK}
     supports::Array{STR_TYPE}
     prepare_res_headers::Function
-    default_status::Integer
+    default_status::DefaultStatus
     header_msg_chunk::(STR_TYPE, STR_TYPE)
     header_msg_type::STR_TYPE
     header_msg_size::STR_TYPE
@@ -33,7 +49,7 @@ const PROTOCOLS = Protocols()
 status{K<:Integer, V<:STR_TYPE}(args::(K, V)...) = Dict{Integer, STR_TYPE}(args)
 status{K<:Integer, V<:STR_TYPE}(d::Dict{K, V}) = convert(Dict{Integer, STR_TYPE}, d)
 
-as_tuple(p::Protocol) = (p.name, p.version)
+astuple(p::Protocol) = (p.name, p.version)
 
 protocol(d::Protocols, name_version::(STR_TYPE,STR_TYPE)) = d.data[name_version]
 protocol(name_version::(STR_TYPE,STR_TYPE)) = protocol(PROTOCOLS, name_version)

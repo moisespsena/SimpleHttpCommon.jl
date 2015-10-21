@@ -20,7 +20,7 @@ function buffer(data = N; start=false)
     b
 end
 
-function mk_res()
+function mkres()
     HTTPResponse(IOSocket(buffer()))
 end
 
@@ -30,7 +30,7 @@ end
 
 type NOT_DEFINED end
 
-function fact_catch{T}(fn::Function, extype::Type{T}, einfo=N; kwargs...)
+function factcatch{T}(fn::Function, extype::Type{T}, einfo=N; kwargs...)
     try
         fn()
         throw(ExceptionNotRaised((extype, einfo)))
@@ -46,12 +46,12 @@ function fact_catch{T}(fn::Function, extype::Type{T}, einfo=N; kwargs...)
     end
 end
 
-fre(fn::Function, einfo=N; kwargs...) = fact_catch(fn, S.ResponseException; kwargs...)
-frqe(fn::Function, einfo=N; kwargs...) = fact_catch(fn, S.RequestException; kwargs...)
+fre(fn::Function, einfo=N; kwargs...) = factcatch(fn, S.ResponseException; kwargs...)
+frqe(fn::Function, einfo=N; kwargs...) = factcatch(fn, S.RequestException; kwargs...)
 
 const str = UTF8String
 
-function write_crlf(io, data="")
+function writecrlf(io, data="")
     s = 0
     if data != ""
         s += Base.write(io, data)
@@ -59,4 +59,4 @@ function write_crlf(io, data="")
     s + Base.write(io, "\r\n")
 end
 
-const wclf = write_crlf
+const wclf = writecrlf

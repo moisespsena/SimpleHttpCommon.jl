@@ -9,20 +9,21 @@
 #
 
 export Request,
-       rp,
        Reader,
        save,
-       content_length,
-       loaded_content_length,
-       content_type,
+       loadedcl,
+       leftcl,
        StringReader,
        event,
        event!,
        CloseRequestException,
        init,
-       read_info,
-       read_headers,
-       parse_data
+       readinfo,
+       readheaders,
+       parsedata,
+       param,
+       body,
+       bodes
 
 using JSON
 
@@ -60,14 +61,14 @@ type Request
     get::Associative{STR_TYPE, Any}
     post::Associative{STR_TYPE, Any}
     events::Events
-    _read_bytes::Integer
-    _header_size::Integer
+    read_bytes::Integer
+    header_size::Integer
     l::Associative{Any, Any}
     websocket
-    _content_length::Integer
+    content_length::Integer
     chunk::Bool
     files::Union(N_TYPE,Array{UploadFile})
-    _content_type::Union(N_TYPE, STR_TYPE)
+    content_type::Union(N_TYPE, STR_TYPE)
 end
 
 Request(io::AbstractIOSocket) = Request(
@@ -76,12 +77,15 @@ Request(io::AbstractIOSocket) = Request(
     0, 0, Dict{Any,Any}(), N, 0, false, N, N
 )
 
+"""
+Return number of loaded bytes of content length
+"""
+loadedcl(r::Request) = r.read_bytes - r.header_size
 
-ready_bytes(r::Request) = r._ready_bytes
-header_size(r::Request) = r._header_size
-content_length(r::Request) = r._content_length
-loaded_content_length(r::Request) = r._content_length - r._read_bytes - r._header_size
-content_type(r::Request) = r._content_type
+"""
+Return left loaded bytes of content length
+"""
+leftcl(r::Request) = r.content_length - loadedcl(r)
 
 trigger(r::Request, e::Event) = trigger(r.events, e, r)
 listener(r::Request, key::Union(Symbol,STR_TYPE), cb::Function) = listener(r.events, key, cb)
@@ -101,9 +105,9 @@ show(io::IO, r::Request) = print(
     ", ",
     r.query,
     " Query STR_TYPE,",
-    r._read_bytes,
+    r.read_bytes,
     " Bytes read,",
-    r._header_bytes,
+    r.header_bytes,
     " Header size",
     ")"
 )
@@ -117,9 +121,9 @@ end
 
 header(r::Request, key::STR_TYPE, value::STR_TYPE) = header(r.headers, key, value)
 
-Base.read{T}(r::Request, data_type::Type{T}, size::Integer) = begin
-    data = Base.read(r.io.io, data_type, size)
-    r._read_bytes += size
+Base.read{T}(r::Request, datatype::Type{T}, size::Integer) = begin
+    data = Base.read(r.io.io, datatype, size)
+    r.read_bytes += size
     data
 end
 
@@ -127,7 +131,7 @@ Base.read(r::Request, size::Integer) = Base.read(r, BYTE_TYPE, size)
 
 Base.readuntil(r::Request, delim) = begin
     data = Base.readuntil(r.io.io, delim)
-    r._read_bytes += sizeof(data)
+    r.read_bytes += sizeof(data)
     data
 end
 
@@ -136,17 +140,17 @@ Base.readline(r::Request) = readline(r.io)
 using StreamReader
 
 function Reader{T,D}(r::Request, bp::PartsIterator; read_type::Type{T} = BYTE_TYPE,
-    data_type::Type{D} = N_TYPE, pre_start::Union(N_TYPE,Function) = N,
+    datatype::Type{D} = N_TYPE, prestart::Union(N_TYPE,Function) = N,
     kwargs...)
     ReaderIterator(bp; kwargs...) do ri
         ri.read = (size) -> Base.read(r, read_type, size)
 
-        if data_type != N_TYPE
-            set_data_type(ri, data_type)
+        if datatype != N_TYPE
+            setdatatype(ri, datatype)
         end
 
-        if pre_start != N
-            pre_start(ri)
+        if prestart != N
+            prestart(ri)
         end
     end
 end
@@ -155,7 +159,7 @@ Reader(r::Request, len::Integer, bsize::Integer=0; kwargs...) = Reader(r,
     PartsIterator(len, bsize); kwargs...)
 
 function save(r::Request, out::IO, len::Integer, bsize::Integer=0;
-    cb::Function = empty_fn, kwargs...)
+    cb::Function = emptyfn, kwargs...)
     r = Reader(r, len, bsize; kwargs...)
     for data in
         cb(r)
@@ -163,7 +167,7 @@ function save(r::Request, out::IO, len::Integer, bsize::Integer=0;
     end
 end
 
-save(r::Request, out::IO, bsize::Integer=0; kwargs...) = save(r, out, r._content_length, bsize; kwargs...)
+save(r::Request, out::IO, bsize::Integer=0; kwargs...) = save(r, out, r.content_length, bsize; kwargs...)
 
 >>(i::ReaderIterator, o::IO) = begin
     for data in i
@@ -172,19 +176,19 @@ save(r::Request, out::IO, bsize::Integer=0; kwargs...) = save(r, out, r._content
 end
 
 function StringReader{D<:STR_TYPE}(r::Request, pi::PartsIterator;
-    data_type::Type{D} = UTF8String, kwargs...)
-    Reader(io, pi; data_type=data_type, kwargs...)
+    datatype::Type{D} = UTF8String, kwargs...)
+    Reader(io, pi; datatype=datatype, kwargs...)
 end
 
 StringReader(r::Request, len::Integer, bsize::Integer=0; kwargs...) = StringReader(io,
     StreamReader.PartsIterator(len, bsize); kwargs...)
 
 
-body(req::Request) = read(req, req._content_length)
+body(req::Request) = read(req, req.content_length)
 bodys(req::Request) =  bytestring(body(req))
 
-function read_first_line(io::AbstractIOSocket)
-    line = readline_bare_str(io)
+function readfirstline(io::AbstractIOSocket)
+    line = readlinebarestr(io)
     s = sizeof(line) + 2
     
     if line == ""
@@ -194,7 +198,7 @@ function read_first_line(io::AbstractIOSocket)
     s, line
 end
 
-function read_headers(io::AbstractIOSocket, lnum::Integer=0; h::Headers=headers())
+function readheaders(io::AbstractIOSocket, lnum::Integer=0; h::Headers=headers())
     s = Integer[0]
 
     lnum += eachline(io, :s!) do itr, line
@@ -221,21 +225,21 @@ function read_headers(io::AbstractIOSocket, lnum::Integer=0; h::Headers=headers(
 end
 
 
-function read_headers(r::Request)
-    s, lines, r.headers = read_headers(r.io)
-    r._read_bytes += s
-    r._header_size = s
+function readheaders(r::Request)
+    s, lines, r.headers = readheaders(r.io)
+    r.read_bytes += s
+    r.header_size = s
 
     cl = get(r.headers, r.protocol.header_msg_size, N)
 
     if cl != N
-        r._content_length = parseint(cl)
+        r.content_length = parseint(cl)
     end
 
     ct = get(r.headers, r.protocol.header_msg_type, N)
 
     if ct != N
-        r._content_type = ct
+        r.content_type = ct
     end
 
     r
@@ -256,7 +260,7 @@ Example:
     GET /index.html HTTP/1.1
     GET /directory%20name/file.txt HTTP/1.1
 """
-function parse_info(line::STR_TYPE, default_protocol::Union(N_TYPE, (STR_TYPE, STR_TYPE))=N)
+function parseinfo(line::STR_TYPE, default_protocol::Union(N_TYPE, (STR_TYPE, STR_TYPE))=N)
     parts = split(line, " ")
     method = resource = protocol = N
 
@@ -286,16 +290,16 @@ function parse_info(line::STR_TYPE, default_protocol::Union(N_TYPE, (STR_TYPE, S
     method, resource, protocol
 end
 
-function read_info(io::AbstractIOSocket, protocols::Protocols,
+function readinfo(io::AbstractIOSocket, protocols::Protocols,
     default_protocol::Union(N_TYPE, (STR_TYPE, STR_TYPE))=N)
-    line = readline_bare_str(io)
+    line = readlinebarestr(io)
     s = sizeof(line) + 2
 
     if line == "quit"
         throw(CloseRequestException("close command recieved."))
     end
 
-    method, resource, protoc = parse_info(line, default_protocol)
+    method, resource, protoc = parseinfo(line, default_protocol)
     query = ""
 
     if resource[1] == '/' # is path
@@ -315,20 +319,20 @@ function read_info(io::AbstractIOSocket, protocols::Protocols,
     (s, method, resource, protoc, query)
 end
 
-function read_info(r::Request, protocols::Protocols,
+function readinfo(r::Request, protocols::Protocols,
     default_protocol::Union(N_TYPE, (STR_TYPE, STR_TYPE))=N)
-    (r._read_bytes, r.method, r.resource, r.protocol, r.query) = read_info(r.io,
+    (r.read_bytes, r.method, r.resource, r.protocol, r.query) = readinfo(r.io,
         protocols, default_protocol)
     r
 end
 
 
 function init(r::Request, protocols, default_protocol::Union(Protocol, N_TYPE)=N)
-    read_info(r, protocols, default_protocol != N? key(default_protocol) : N)
-    read_headers(r)
+    readinfo(r, protocols, default_protocol != N? key(default_protocol) : N)
+    readheaders(r)
 
     if r.query != N
-        r.get = parse_qsr(r.query)
+        r.get = parseqsr(r.query)
     end
 
     r.protocol.req_post_init(r)
@@ -341,27 +345,49 @@ function init(r::Request, protocols, default_protocol::Union(Protocol, N_TYPE)=N
     r, res
 end
 
-
-function parse_data(r::Request)
-    if r._content_type != N
-        ct = r._content_type
+"""
+Parse content data if content-type is "application/x-www-form-urlencoded",
+"application/json" or "multipart/form-data". If parsed, return ``true``,
+otherwise, ``false``.
+"""
+function parsedata(r::Request)
+    if r.content_type != N
+        ct = r.content_type
         if search(ct, "application/x-www-form-urlencoded").start > 0
-            r.post = parse_qsr(bodys(r))
+            r.post = parseqsr(bodys(r))
         elseif search(ct, "application/json").start > 0
             r.post = JSON.parse(bodys(r))
         elseif search(ct, "multipart/form-data").start > 0
-            parse_multipart_formdata(r)
+            parsempfd(r)
         end
         return true
     end
     false
 end
 
-
+"""
+Return a request param. If ``key`` exists in ``Request.get``, return it, otherwise
+``key`` exists in ``Request.post``, return it, otherwise, return ``default``.
+For default, value of ``default`` is ``N``.
+"""
 param(r::Request, key::STR_TYPE, default=N) = (haskey(r.get, key) ? 
     r.get[key] : (haskey(r.post, key) ? r.post[key] : default))
 
-function multipart_boundary(content_type::STR_TYPE)
+"""
+Extract multipart boundary of content type.
+Returns tuple of ``(boundary, eof_boundary)``.
+
+
+Example:
+
+
+.. doctest::
+
+    julia> multipartboundary("multipart/form-data; boundary=AxdFtg1")
+    ("AxdFtg1", "AxdFtg1--")
+
+"""
+function multipartboundary(content_type::STR_TYPE)
     d = content_type
     b_pos = search(d, "boundary=")
     e_pos = search(d, "; ", b_pos.stop)
@@ -371,7 +397,7 @@ function multipart_boundary(content_type::STR_TYPE)
     boundary, string(boundary, "--")
 end
 
-function parse_content_disposition(s::STR_TYPE)
+function parsecontentdisposition(s::STR_TYPE)
     d = Dict{STR_TYPE, STR_TYPE}
     disposition, s = split(s, ";", 2)
 
@@ -403,7 +429,7 @@ end
 
 typealias BoundaryTuple (Array{BYTE_TYPE}, Array{BYTE_TYPE})
 
-function boundary_writer(io::AbstractIOSocket, boundaryd::BoundaryTuple)
+function boundarywriter(io::AbstractIOSocket, boundaryd::BoundaryTuple)
     oio = IOBuffer()
     prev_line = BYTE_TYPE[]
     stop = false
@@ -434,12 +460,12 @@ function boundary_writer(io::AbstractIOSocket, boundaryd::BoundaryTuple)
     s, stop, oio
 end
 
-function parse_multipart_formdata_part(io::AbstractIOSocket, boundaryd::BoundaryTuple, encoding::STR_TYPE, d, files)
-   s, lnum, h = read_headers(io; h=Dict{STR_TYPE, STR_TYPE}())
+function parsempfdpart(io::AbstractIOSocket, boundaryd::BoundaryTuple, encoding::STR_TYPE, d, files)
+   s, lnum, h = readheaders(io; h=Dict{STR_TYPE, STR_TYPE}())
    stop = true
 
    if length(h) > 0
-        disposition, name, filename = parse_content_disposition(h["Content-Disposition"])
+        disposition, name, filename = parsecontentdisposition(h["Content-Disposition"])
 
         if !haskey(d, name)
             values = d[name] = {}
@@ -448,13 +474,13 @@ function parse_multipart_formdata_part(io::AbstractIOSocket, boundaryd::Boundary
         end
 
         if haskey(h, "Content-Type")
-            ls, stop, mio = boundary_writer(io, boundaryd)
+            ls, stop, mio = boundarywriter(io, boundaryd)
             s += ls
             value = UploadFile(filename, h["Content-Type"], sizeof(mio.data), mio; headers=h)
             push!(files, value)
             push!(values, value)
         else
-            ls, stop, mio = boundary_writer(io, boundaryd)
+            ls, stop, mio = boundarywriter(io, boundaryd)
             s += ls
             value = takebuf_array(mio)
 
@@ -470,9 +496,9 @@ function parse_multipart_formdata_part(io::AbstractIOSocket, boundaryd::Boundary
 end
 
 
-function parse_multipart_formdata(io::AbstractIOSocket, boundary::(STR_TYPE, STR_TYPE), encoding::STR_TYPE="")
+function parsempfd(io::AbstractIOSocket, boundary::(STR_TYPE, STR_TYPE), encoding::STR_TYPE="")
     # read boundary on first content line
-    line = readline_bare(io)
+    line = readlinebare(io)
     s = sizeof(line) + 2
     line == boundary[1].data || throw(RequestException("parse_multipart",
         "Expected boundary data.", (s, [:boundary => boundary[1], :line => line])))
@@ -483,21 +509,30 @@ function parse_multipart_formdata(io::AbstractIOSocket, boundary::(STR_TYPE, STR
     stop = false
 
     while !stop
-        ls, stop = parse_multipart_formdata_part(io, boundaryd, encoding, d, files)
+        ls, stop = parsempfdpart(io, boundaryd, encoding, d, files)
         s += ls
     end
 
     s, d, files
 end
 
-function parse_multipart_formdata(r::Request)
+"""
+Parse multipart form data content into ``Request.post`` and ``Request.files``.
+"""
+function parsempfd!(r::Request)
+    # the temporary
     io = IOBuffer()
     # read all content into BUFFER
     write(io, body(r))
     seekstart(io)
-    boundary = S.multipart_boundary(r.headers["Content-Type"])
-    encoding = ""
-    s, r.p, r.files = S.parse_multipart_formdata(IOSocket(io), boundary, encoding)
-    # discard read size...
-    r.p, r.files # dict of parameters, files list
+
+    parse = (io) -> begin
+        boundary = S.multipartboundary(r.headers["Content-Type"])
+        encoding = ""
+        s, r.post, r.files = S.parsempfd(IOSocket(io), boundary, encoding)
+        # discard read size...
+        r.post, r.files # dict of parameters, files list
+    end
+
+    parse(io)
 end

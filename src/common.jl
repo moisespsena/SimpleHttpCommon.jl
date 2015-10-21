@@ -4,13 +4,13 @@ import Iterators: chain
 
 export headers,
     header,
-    parse_qs,
-    parse_qsr,
+    parseqs,
+    parseqsr,
     params,
     fileinfo,
     isiter
 
-function empty_fn(args...; kwargs...)
+function emptyfn(args...; kwargs...)
 end
 
 const str = string
@@ -56,7 +56,7 @@ function fileinfo(filename::STR_TYPE)
 end
 
 
-function parse_qs(query::STR_TYPE)
+function parseqs(query::STR_TYPE)
     if !('=' in query)
         return throw("Not a valid query string: $query, must contain at least one key=value pair.")
     end
@@ -78,7 +78,7 @@ function parse_qs(query::STR_TYPE)
     q
 end
 
-function parse_qsr(allq::Associative{STR_TYPE, Any})
+function parseqsr(allq::Associative{STR_TYPE, Any})
     akeys = reverse(sort(collect(keys(allq))))
 
     q = OrderedDict{STR_TYPE,Any}()
@@ -103,7 +103,7 @@ function parse_qsr(allq::Associative{STR_TYPE, Any})
     q
 end
 
-parse_qsr(query::STR_TYPE) = parse_qsr(parse_qs(query))
+parseqsr(query::STR_TYPE) = parseqsr(parseqs(query))
 
 
 import Base.mktemp

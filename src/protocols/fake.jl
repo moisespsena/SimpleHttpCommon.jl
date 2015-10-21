@@ -1,14 +1,14 @@
 FAKE_PROTOCOL =  Protocol(
     "FAKE",
     "1.1",
-    status([0 => "ok", 1 => "error", 3 => "wo_msg"]),
-    Integer[3],
+    status([0 => "ok", 1 => "not_found", 2 => "bad_request", 3 => "internal_server_error", 4 => "empty_response"]),
+    Integer[4],
     String[],
-    empty_fn,
-    0,
+    emptyfn,
+    DefaultStatus(0, 1, 2, 3),
     ("te", "chunked"),
     "ct",
     "cl",
-    empty_fn,
-    empty_fn
+    emptyfn,
+    emptyfn
 )
