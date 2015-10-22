@@ -2,7 +2,6 @@ language: julia
 julia:
   - release
   - nightly
-  - 0.3
   - 0.3.10
 install:
   - julia -e "Pkg.clone(\"https://github.com/moisespsena/StreamReader.jl.git\");"
