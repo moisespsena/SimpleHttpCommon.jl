@@ -9,7 +9,8 @@ export headers,
     parseqsr,
     params,
     fileinfo,
-    isiter
+    isiter,
+    RFC1123_datetime
 
 function emptyfn(args...; kwargs...)
 end
