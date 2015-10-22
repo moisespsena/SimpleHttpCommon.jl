@@ -34,7 +34,6 @@ import Base: readbytes,
              readline,
              readuntil
 using HttpCommon: STATUS_CODES,
-       RFC1123_datetime,
        HttpMethodBitmask,
        HttpMethodBitmasks,
        HttpMethodNameToBitmask,
