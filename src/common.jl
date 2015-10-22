@@ -1,6 +1,7 @@
 import DataStructures: OrderedDict
 
 import Iterators: chain
+import Dates
 
 export headers,
     header,
@@ -14,6 +15,9 @@ function emptyfn(args...; kwargs...)
 end
 
 const str = string
+
+RFC1123_datetime(t::Dates.DateTime) = Dates.format(t, Dates.RFC1123Format) * " GMT"
+RFC1123_datetime() = RFC1123_datetime(Dates.now(Dates.UTC))
 
 
 typealias Headers{K<:STR_TYPE, V<:Union(STR_TYPE, Array{STR_TYPE})} Associative{K, V}
