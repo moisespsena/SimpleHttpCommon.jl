@@ -15,6 +15,7 @@ using SimpleHttpIO
 const N = SimpleHttpIO.N
 const N_TYPE = SimpleHttpIO.N_TYPE
 const STR_TYPE = SimpleHttpIO.STR_TYPE
+import URIParser: URI, unescape
 
 include("Chunk.jl")
 
@@ -35,14 +36,7 @@ import Base: readbytes,
              readuntil
 using HttpCommon: STATUS_CODES,
        escapeHTML,
-       encodeURI,
-       decodeURI,
        mimetypes
-
-export escapeHTML,
-       mimetypes,
-       encodeURI,
-       decodeURI
 
 import .Chunk
 

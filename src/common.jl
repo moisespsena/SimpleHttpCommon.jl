@@ -2,6 +2,8 @@ import DataStructures: OrderedDict
 
 import Iterators: chain
 import Dates
+import URIParser: URI, unescape, escape
+import HttpCommon: parsequerystring
 
 export headers,
     header,
@@ -70,8 +72,8 @@ function parseqs(query::STR_TYPE)
 
     for set in split(query, "&")
         key, val = split(set, "=")
-        val = decodeURI(val)
-        key = decodeURI(key)
+        val = unescape(val)
+        key = unescape(key)
 
         if haskey(q, key)
             push!(q[key], val)
@@ -83,7 +85,7 @@ function parseqs(query::STR_TYPE)
     q
 end
 
-function parseqsr(allq::Associative{STR_TYPE, Any})
+function parseqsr{T<:Any}(allq::Associative{STR_TYPE, T})
     akeys = reverse(sort(collect(keys(allq))))
 
     q = OrderedDict{STR_TYPE,Any}()
